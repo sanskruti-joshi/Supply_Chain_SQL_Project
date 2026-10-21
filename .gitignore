@@ -1,0 +1,36 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+#Raw and processed datasets: keep data local unless explicitly approved
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+#Do not commit large local exports or database backups
+*.dump
+*.backup
+*.bak
+*.sql.gz
+
+#Local logs and temporary files
+*.log
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+#Python artifacts, if Python is added later
+pycache/
+*.py[cod]
+.venv/
+venv/
+
+#Editor-specific local files
+.vscode/*
+!.vscode/extensions.json
