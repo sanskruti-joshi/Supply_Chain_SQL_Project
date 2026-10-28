@@ -198,3 +198,164 @@ CROSS JOIN LATERAL (
 WHERE NULLIF(BTRIM(field_value), '') IS NOT NULL
 GROUP BY field_name, field_value
 ORDER BY field_name, field_value;
+
+
+-- Checks to validate the dataset's logical relationships.
+
+-- Check 1: Verify delivery status against risk.
+SELECT
+    "Delivery Status",
+    "Late_delivery_risk",
+    COUNT(*) AS row_count
+FROM staging.dataco_raw
+group by "Delivery Status", "Late_delivery_risk"
+ORDER BY "Delivery Status", "Late_delivery_risk";
+
+-- Check 2: Check whether orders have consistent customer IDs.
+SELECT
+    "Order Id",
+    COUNT(DISTINCT "Customer Id") AS distinct_customer_ids,
+    COUNT(*) AS row_count
+FROM staging.dataco_raw
+GROUP BY "Order Id"
+having COUNT(DISTINCT "Customer Id") > 1
+ORDER BY distinct_customer_ids DESC, "Order Id";
+
+-- Check 3: Compare product and category identifiers.
+SELECT
+    "Product Card Id",
+    COUNT(DISTINCT "Product Category Id") AS distinct_category_ids
+from staging.dataco_raw
+where NULLIF(BTRIM("Product Card Id"), '') IS NOT NULL
+group by "Product Card Id"
+having COUNT(DISTINCT "Product Category Id") > 1
+order by distinct_category_ids DESC, "Product Card Id";
+
+-- Check 4: Compare customer identifiers
+SELECT 
+    COUNT(*) AS mismatched_customer_ids
+FROM staging.dataco_raw
+WHERE NULLIF(BTRIM("Customer Id"), '') IS DISTINCT FROM
+      NULLIF(BTRIM("Order Customer Id"), '');
+
+-- Check 5: Check missing identifiers.
+SELECT
+    COUNT(*) FILTER (
+        WHERE NULLIF(BTRIM("Order Item Id"), '') IS NULL
+    ) AS missing_order_item_ids,
+    COUNT(*) FILTER (
+        WHERE NULLIF(BTRIM("Order Id"), '') IS NULL
+    ) AS missing_order_ids,
+    COUNT(*) FILTER (
+        WHERE NULLIF(BTRIM("Customer Id"), '') IS NULL
+    ) AS missing_customer_ids,
+    COUNT(*) FILTER (
+        WHERE NULLIF(BTRIM("Product Card Id"), '') IS NULL
+    ) AS missing_product_ids,
+    COUNT(*) FILTER (
+        WHERE NULLIF(BTRIM("Product Category Id"), '') IS NULL
+    ) AS missing_product_category_ids
+FROM staging.dataco_raw;
+
+-- Check 6: Check whether each product has one category.
+SELECT
+    COUNT(*) AS products_with_missing_category
+FROM (
+    SELECT
+        "Product Card Id"
+    FROM staging.dataco_raw
+    WHERE NULLIF(BTRIM("Product Card Id"), '') IS NOT NULL
+    GROUP BY "Product Card Id"
+    HAVING COUNT(*) FILTER (
+        WHERE NULLIF(BTRIM("Product Category Id"), '') IS NULL
+    ) > 0
+) AS product_category_check;
+
+
+-- Check 7: Order-level consistency checks. Identify attributes that vary within an order.
+SELECT
+    "Order Id",
+    COUNT(DISTINCT "Order Customer Id") AS customer_count,
+    COUNT(DISTINCT "order date (DateOrders)") AS order_date_count,
+    COUNT(DISTINCT "Order Status") AS order_status_count,
+    COUNT(DISTINCT "Shipping Mode") AS shipping_mode_count,
+    COUNT(DISTINCT "Market") AS market_count,
+    COUNT(DISTINCT "Order City") AS city_count,
+    COUNT(DISTINCT "Order Country") AS country_count,
+    COUNT(DISTINCT "Order Region") AS region_count,
+    COUNT(DISTINCT "Order State") AS state_count
+FROM staging.dataco_raw
+GROUP BY "Order Id"
+HAVING
+       COUNT(DISTINCT "Order Customer Id") > 1
+    OR COUNT(DISTINCT "order date (DateOrders)") > 1
+    OR COUNT(DISTINCT "Order Status") > 1
+    OR COUNT(DISTINCT "Shipping Mode") > 1
+    OR COUNT(DISTINCT "Market") > 1
+    OR COUNT(DISTINCT "Order City") > 1
+    OR COUNT(DISTINCT "Order Country") > 1
+    OR COUNT(DISTINCT "Order Region") > 1
+    OR COUNT(DISTINCT "Order State") > 1
+ORDER BY "Order Id";
+
+-- Check 8: Check product attributes. Whether a Product ID maps to multiple names or prices.
+SELECT
+    "Product Card Id",
+    COUNT(DISTINCT "Product Name") AS name_count,
+    COUNT(DISTINCT "Product Price") AS price_count
+FROM staging.dataco_raw
+GROUP BY "Product Card Id"
+HAVING
+       COUNT(DISTINCT "Product Name") > 1
+    OR COUNT(DISTINCT "Product Price") > 1
+ORDER BY "Product Card Id";
+
+-- Check 9: Check category names. Whether a category ID maps to multiple category names
+SELECT
+    "Category Id",
+    COUNT(DISTINCT "Category Name") AS category_name_count
+FROM staging.dataco_raw
+GROUP BY "Category Id"
+HAVING COUNT(DISTINCT "Category Name") > 1
+ORDER BY "Category Id";
+
+-- Check 10: Check product-to-department consistency. Whether products appear in multiple departments
+SELECT
+    "Product Card Id",
+    COUNT(DISTINCT "Department Id") AS department_count
+FROM staging.dataco_raw
+GROUP BY "Product Card Id"
+HAVING COUNT(DISTINCT "Department Id") > 1
+ORDER BY "Product Card Id";
+
+
+-- Check 11: Category and Department Identifier Validation
+
+-- Check category IDs against category names
+SELECT
+    "Category Id",
+    COUNT(DISTINCT "Category Name") AS category_name_count
+FROM staging.dataco_raw
+GROUP BY "Category Id"
+HAVING COUNT(DISTINCT "Category Name") > 1
+ORDER BY "Category Id";
+
+
+-- Check department IDs against department names
+SELECT
+    "Department Id",
+    COUNT(DISTINCT "Department Name") AS department_name_count
+FROM staging.dataco_raw
+GROUP BY "Department Id"
+HAVING COUNT(DISTINCT "Department Name") > 1
+ORDER BY "Department Id";
+
+
+-- Check product IDs against product category IDs
+SELECT
+    "Product Card Id",
+    COUNT(DISTINCT "Product Category Id") AS category_count
+FROM staging.dataco_raw
+GROUP BY "Product Card Id"
+HAVING COUNT(DISTINCT "Product Category Id") > 1
+ORDER BY "Product Card Id";
