@@ -1,11 +1,12 @@
--- These checks preserve the raw staging table.
+-- Purpose: Describe the raw DataCo dataset before validation
+-- or transformation. All queries are read-only.
+-- =========================================================
 
--- 1. Total imported rows.
+-- 1. Overall dataset size.
 SELECT COUNT(*) AS imported_row_count
 FROM staging.dataco_raw;
 
--- 2. The source header was verified to contain 53 fields. Compare that
--- contract with the actual staging-table definition.
+-- 2. Compare the expected source width with the staging table.
 SELECT
     53 AS expected_column_count,
     COUNT(*) AS actual_column_count,
@@ -14,7 +15,8 @@ FROM information_schema.columns
 WHERE table_schema = 'staging'
   AND table_name = 'dataco_raw';
 
--- 3. Null and empty/whitespace-only values in identifiers and core dimensions.
+-- 3. Completeness profile for key identifiers and core dimensions.
+-- This is a focused profile, not an all-53-column completeness report.
 SELECT
     field_name,
     COUNT(*) FILTER (WHERE field_value IS NULL) AS null_count,
@@ -27,46 +29,34 @@ CROSS JOIN LATERAL (
         ('Order Id', r."Order Id"),
         ('Order Item Id', r."Order Item Id"),
         ('Customer Id', r."Customer Id"),
+        ('Order Customer Id', r."Order Customer Id"),
         ('Product Card Id', r."Product Card Id"),
+        ('Order Item Cardprod Id', r."Order Item Cardprod Id"),
+        ('Category Id', r."Category Id"),
+        ('Product Category Id', r."Product Category Id"),
+        ('Department Id', r."Department Id"),
         ('Delivery Status', r."Delivery Status"),
         ('Order Status', r."Order Status"),
         ('Shipping Mode', r."Shipping Mode"),
         ('order date (DateOrders)', r."order date (DateOrders)"),
-        ('shipping date (DateOrders)', r."shipping date (DateOrders)"),
-        ('Category Id', r."Category Id")
+        ('shipping date (DateOrders)', r."shipping date (DateOrders)")
 ) AS fields(field_name, field_value)
 GROUP BY field_name
 ORDER BY field_name;
 
--- 4. Distinct identifier counts. Blank identifiers are excluded; these counts
--- do not assert that any identifier is a primary key.
+-- 4. Distinct identifier counts. These counts do not by themselves prove
+-- uniqueness or suitability as primary keys.
 SELECT
-    COUNT(DISTINCT "Order Id") FILTER (
-        WHERE NULLIF(BTRIM("Order Id"), '') IS NOT NULL
-    ) AS distinct_order_ids,
-    COUNT(DISTINCT "Order Item Id") FILTER (
-        WHERE NULLIF(BTRIM("Order Item Id"), '') IS NOT NULL
-    ) AS distinct_order_item_ids,
-    COUNT(DISTINCT "Customer Id") FILTER (
-        WHERE NULLIF(BTRIM("Customer Id"), '') IS NOT NULL
-    ) AS distinct_customer_ids,
-    COUNT(DISTINCT "Product Card Id") FILTER (
-        WHERE NULLIF(BTRIM("Product Card Id"), '') IS NOT NULL
-    ) AS distinct_product_card_ids
+    COUNT(DISTINCT NULLIF(BTRIM("Order Id"), '')) AS distinct_order_ids,
+    COUNT(DISTINCT NULLIF(BTRIM("Order Item Id"), '')) AS distinct_order_item_ids,
+    COUNT(DISTINCT NULLIF(BTRIM("Customer Id"), '')) AS distinct_customer_ids,
+    COUNT(DISTINCT NULLIF(BTRIM("Product Card Id"), '')) AS distinct_product_card_ids,
+    COUNT(DISTINCT NULLIF(BTRIM("Category Id"), '')) AS distinct_category_ids,
+    COUNT(DISTINCT NULLIF(BTRIM("Department Id"), '')) AS distinct_department_ids
 FROM staging.dataco_raw;
 
--- 5. Duplicate non-empty Order Item Id values; no duplicates are removed.
-SELECT
-    "Order Item Id",
-    COUNT(*) AS row_count
-FROM staging.dataco_raw
-WHERE NULLIF(BTRIM("Order Item Id"), '') IS NOT NULL
-GROUP BY "Order Item Id"
-HAVING COUNT(*) > 1
-ORDER BY row_count DESC, "Order Item Id";
-
--- 6a. Date-field summary. The expected source shape is M/D/YYYY H:MM.
--- This checks shape only, not calendar validity (for example, February 30).
+-- 5. Date-field summary. The expected source shape is M/D/YYYY H:MM.
+-- This checks text shape, not full calendar validity.
 WITH date_fields AS (
     SELECT 'order date (DateOrders)' AS field_name,
            "order date (DateOrders)" AS raw_value
@@ -100,10 +90,10 @@ FROM date_fields
 GROUP BY field_name
 ORDER BY field_name;
 
--- 6b. Inspect up to 40 distinct raw date values and their frequencies.
+-- 6. Inspect a small sample of distinct date strings and their frequencies.
 WITH date_fields AS (
     SELECT 'order date (DateOrders)' AS field_name,
-           "order date (DateOrders)" AS raw_value
+        "order date (DateOrders)" AS raw_value
     FROM staging.dataco_raw
     UNION ALL
     SELECT 'shipping date (DateOrders)',
@@ -117,16 +107,11 @@ GROUP BY field_name, raw_value
 ORDER BY field_name, raw_value
 LIMIT 40;
 
--- 7. Conservative text-format checks for fields intended to be numeric.
--- Blank values are counted separately above; no casts are attempted here.
--- These checks validate syntax only, not a future target type's range/precision.
--- Postal codes are intentionally left out because they are identifiers, not
--- numeric measures, and should remain text to preserve formatting.
+-- 7. Check text syntax for fields expected to be numeric.
+-- This validates syntax only, not semantic ranges or target-type precision.
+-- Postal codes are omitted because they are identifiers and should remain text.
 WITH numeric_values AS (
-    SELECT
-        field_name,
-        raw_value,
-        value_kind
+    SELECT field_name, raw_value, value_kind
     FROM staging.dataco_raw AS r
     CROSS JOIN LATERAL (
         VALUES
@@ -183,6 +168,7 @@ GROUP BY field_name
 ORDER BY field_name;
 
 -- 8. Enumerate observed values and frequencies for key categorical fields.
+-- Useful for discovering unexpected labels; consistency rules are in file 04.
 SELECT
     field_name,
     field_value,
@@ -199,163 +185,77 @@ WHERE NULLIF(BTRIM(field_value), '') IS NOT NULL
 GROUP BY field_name, field_value
 ORDER BY field_name, field_value;
 
-
--- Checks to validate the dataset's logical relationships.
-
--- Check 1: Verify delivery status against risk.
+-- 9. Profile the distribution of Order Item Profit Ratio.
+-- Negative values are not automatically errors; interpret them using the
+-- dataset's business definition before making any cleaning decision.
 SELECT
-    "Delivery Status",
-    "Late_delivery_risk",
-    COUNT(*) AS row_count
+    MIN("Order Item Profit Ratio"::NUMERIC) AS minimum_profit_ratio,
+    MAX("Order Item Profit Ratio"::NUMERIC) AS maximum_profit_ratio,
+    AVG("Order Item Profit Ratio"::NUMERIC) AS average_profit_ratio,
+    COUNT(*) FILTER (
+        WHERE "Order Item Profit Ratio"::NUMERIC < 0
+    ) AS negative_ratio_rows,
+    COUNT(*) FILTER (
+        WHERE "Order Item Profit Ratio"::NUMERIC = 0
+    ) AS zero_ratio_rows,
+    COUNT(*) FILTER (
+        WHERE "Order Item Profit Ratio"::NUMERIC > 0
+    ) AS positive_ratio_rows
 FROM staging.dataco_raw
-group by "Delivery Status", "Late_delivery_risk"
-ORDER BY "Delivery Status", "Late_delivery_risk";
+WHERE NULLIF(BTRIM("Order Item Profit Ratio"), '') IS NOT NULL;
 
--- Check 2: Check whether orders have consistent customer IDs.
+-- 10. Inspect a sample of records with negative profit ratios.
 SELECT
     "Order Id",
-    COUNT(DISTINCT "Customer Id") AS distinct_customer_ids,
-    COUNT(*) AS row_count
+    "Order Item Id",
+    "Product Name",
+    "Sales",
+    "Order Item Profit Ratio",
+    "Order Item Total"
 FROM staging.dataco_raw
-GROUP BY "Order Id"
-having COUNT(DISTINCT "Customer Id") > 1
-ORDER BY distinct_customer_ids DESC, "Order Id";
+WHERE NULLIF(BTRIM("Order Item Profit Ratio"), '') IS NOT NULL
+  AND "Order Item Profit Ratio"::NUMERIC < 0
+ORDER BY "Order Item Profit Ratio"::NUMERIC
+LIMIT 20;
 
--- Check 3: Compare product and category identifiers.
+-- 11. Inspect the distribution of distinct profit-ratio values.
 SELECT
-    "Product Card Id",
-    COUNT(DISTINCT "Product Category Id") AS distinct_category_ids
-from staging.dataco_raw
-where NULLIF(BTRIM("Product Card Id"), '') IS NOT NULL
-group by "Product Card Id"
-having COUNT(DISTINCT "Product Category Id") > 1
-order by distinct_category_ids DESC, "Product Card Id";
-
--- Check 4: Compare customer identifiers
-SELECT 
-    COUNT(*) AS mismatched_customer_ids
+    "Order Item Profit Ratio"::NUMERIC AS profit_ratio,
+    COUNT(*) AS row_count,
+    MIN("Sales"::NUMERIC) AS minimum_sales,
+    MAX("Sales"::NUMERIC) AS maximum_sales
 FROM staging.dataco_raw
-WHERE NULLIF(BTRIM("Customer Id"), '') IS DISTINCT FROM
-      NULLIF(BTRIM("Order Customer Id"), '');
+WHERE NULLIF(BTRIM("Order Item Profit Ratio"), '') IS NOT NULL
+  AND NULLIF(BTRIM("Sales"), '') IS NOT NULL
+GROUP BY "Order Item Profit Ratio"::NUMERIC
+ORDER BY profit_ratio;
 
--- Check 5: Check missing identifiers.
-SELECT
-    COUNT(*) FILTER (
-        WHERE NULLIF(BTRIM("Order Item Id"), '') IS NULL
-    ) AS missing_order_item_ids,
-    COUNT(*) FILTER (
-        WHERE NULLIF(BTRIM("Order Id"), '') IS NULL
-    ) AS missing_order_ids,
-    COUNT(*) FILTER (
-        WHERE NULLIF(BTRIM("Customer Id"), '') IS NULL
-    ) AS missing_customer_ids,
-    COUNT(*) FILTER (
-        WHERE NULLIF(BTRIM("Product Card Id"), '') IS NULL
-    ) AS missing_product_ids,
-    COUNT(*) FILTER (
-        WHERE NULLIF(BTRIM("Product Category Id"), '') IS NULL
-    ) AS missing_product_category_ids
-FROM staging.dataco_raw;
-
--- Check 6: Check whether each product has one category.
-SELECT
-    COUNT(*) AS products_with_missing_category
-FROM (
-    SELECT
-        "Product Card Id"
-    FROM staging.dataco_raw
-    WHERE NULLIF(BTRIM("Product Card Id"), '') IS NOT NULL
-    GROUP BY "Product Card Id"
-    HAVING COUNT(*) FILTER (
-        WHERE NULLIF(BTRIM("Product Category Id"), '') IS NULL
-    ) > 0
-) AS product_category_check;
-
-
--- Check 7: Order-level consistency checks. Identify attributes that vary within an order.
+-- 12. Inspect records with the largest absolute profit ratios.
 SELECT
     "Order Id",
-    COUNT(DISTINCT "Order Customer Id") AS customer_count,
-    COUNT(DISTINCT "order date (DateOrders)") AS order_date_count,
-    COUNT(DISTINCT "Order Status") AS order_status_count,
-    COUNT(DISTINCT "Shipping Mode") AS shipping_mode_count,
-    COUNT(DISTINCT "Market") AS market_count,
-    COUNT(DISTINCT "Order City") AS city_count,
-    COUNT(DISTINCT "Order Country") AS country_count,
-    COUNT(DISTINCT "Order Region") AS region_count,
-    COUNT(DISTINCT "Order State") AS state_count
+    "Order Item Id",
+    "Product Name",
+    "Order Item Profit Ratio",
+    "Order Profit Per Order",
+    "Sales",
+    "Order Item Total"
 FROM staging.dataco_raw
+WHERE NULLIF(BTRIM("Order Item Profit Ratio"), '') IS NOT NULL
+ORDER BY ABS("Order Item Profit Ratio"::NUMERIC) DESC
+LIMIT 20;
+
+-- 13. Investigate whether profit ratio varies between items in an order.
+-- This is descriptive exploration, not an assumption that the ratio must match.
+SELECT
+    "Order Id",
+    COUNT(*) AS item_rows,
+    COUNT(DISTINCT "Order Item Profit Ratio") AS distinct_ratios,
+    MIN("Order Item Profit Ratio"::NUMERIC) AS min_ratio,
+    MAX("Order Item Profit Ratio"::NUMERIC) AS max_ratio
+FROM staging.dataco_raw
+WHERE NULLIF(BTRIM("Order Id"), '') IS NOT NULL
+  AND NULLIF(BTRIM("Order Item Profit Ratio"), '') IS NOT NULL
 GROUP BY "Order Id"
-HAVING
-       COUNT(DISTINCT "Order Customer Id") > 1
-    OR COUNT(DISTINCT "order date (DateOrders)") > 1
-    OR COUNT(DISTINCT "Order Status") > 1
-    OR COUNT(DISTINCT "Shipping Mode") > 1
-    OR COUNT(DISTINCT "Market") > 1
-    OR COUNT(DISTINCT "Order City") > 1
-    OR COUNT(DISTINCT "Order Country") > 1
-    OR COUNT(DISTINCT "Order Region") > 1
-    OR COUNT(DISTINCT "Order State") > 1
-ORDER BY "Order Id";
-
--- Check 8: Check product attributes. Whether a Product ID maps to multiple names or prices.
-SELECT
-    "Product Card Id",
-    COUNT(DISTINCT "Product Name") AS name_count,
-    COUNT(DISTINCT "Product Price") AS price_count
-FROM staging.dataco_raw
-GROUP BY "Product Card Id"
-HAVING
-       COUNT(DISTINCT "Product Name") > 1
-    OR COUNT(DISTINCT "Product Price") > 1
-ORDER BY "Product Card Id";
-
--- Check 9: Check category names. Whether a category ID maps to multiple category names
-SELECT
-    "Category Id",
-    COUNT(DISTINCT "Category Name") AS category_name_count
-FROM staging.dataco_raw
-GROUP BY "Category Id"
-HAVING COUNT(DISTINCT "Category Name") > 1
-ORDER BY "Category Id";
-
--- Check 10: Check product-to-department consistency. Whether products appear in multiple departments
-SELECT
-    "Product Card Id",
-    COUNT(DISTINCT "Department Id") AS department_count
-FROM staging.dataco_raw
-GROUP BY "Product Card Id"
-HAVING COUNT(DISTINCT "Department Id") > 1
-ORDER BY "Product Card Id";
-
-
--- Check 11: Category and Department Identifier Validation
-
--- Check category IDs against category names
-SELECT
-    "Category Id",
-    COUNT(DISTINCT "Category Name") AS category_name_count
-FROM staging.dataco_raw
-GROUP BY "Category Id"
-HAVING COUNT(DISTINCT "Category Name") > 1
-ORDER BY "Category Id";
-
-
--- Check department IDs against department names
-SELECT
-    "Department Id",
-    COUNT(DISTINCT "Department Name") AS department_name_count
-FROM staging.dataco_raw
-GROUP BY "Department Id"
-HAVING COUNT(DISTINCT "Department Name") > 1
-ORDER BY "Department Id";
-
-
--- Check product IDs against product category IDs
-SELECT
-    "Product Card Id",
-    COUNT(DISTINCT "Product Category Id") AS category_count
-FROM staging.dataco_raw
-GROUP BY "Product Card Id"
-HAVING COUNT(DISTINCT "Product Category Id") > 1
-ORDER BY "Product Card Id";
+HAVING COUNT(DISTINCT "Order Item Profit Ratio") > 1
+ORDER BY "Order Id"
+LIMIT 100;
