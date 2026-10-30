@@ -93,4 +93,4 @@ This dictionary is based on the accompanying `DescriptionDataCoSupplyChain.csv` 
 | Order Country | Destination country of the order. |
 | Order Region | Region of the world where the order is delivered. The source lists regions including Southeast Asia, South Asia, Oceania, Eastern Asia, West Asia, West of USA, US Center, West Africa, Central Africa, North Africa, Western Europe, Northern, Caribbean, South America, East Africa, Southern Europe, East of USA, Canada, Southern Africa, Central Asia, Europe, Central America, Eastern Europe, and South of USA. |
 | Order State | State of the region where the order is delivered. |
-
+| Order Zipcode | Destination ZIP/postal code; the source description file does not define this field. |

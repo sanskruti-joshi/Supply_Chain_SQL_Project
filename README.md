@@ -1,52 +1,67 @@
 # Supply Chain & Operations Intelligence
 
-A SQL portfolio project investigating supply chain reliability, delivery performance, supplier logistics, inventory risk, and operational efficiency using PostgreSQL.
-Project objective
-Build a reproducible analytical database and a collection of validated SQL analyses that turn supply chain data into actionable operational insights.
+A PostgreSQL and SQL portfolio project exploring order, delivery, and supply-chain data from the DataCo Smart Supply Chain dataset. The current implemented work is focused on staging setup, import, profiling, and data-quality checks; downstream analysis and schema work remain in progress.
 
-The project emphasizes analytical SQL, relational data modeling, data quality, business metric definitions, query optimization, and evidence-based recommendations.
+## Project Goals
 
-Business questions
-- How reliable are order deliveries?
-- Which regions and shipping methods show weaker delivery performance?
-- How does supplier or logistics performance vary?
-- Which products may face inventory or replenishment risk?
-- How are operational metrics changing over time?
-- What improvements should management investigate?
-The exact analyses will depend on the fields available in the selected dataset.
+- Validate source data and document its grain and limitations.
+- Develop defensible delivery, sales, and profitability metrics.
+- Explore operational patterns only when supported by the available data.
+- Build reusable SQL analyses and, later, evaluate query performance.
 
-Technology stack
+Supplier performance and inventory risk are questions for future work: the current dataset does not establish supplier identifiers or inventory/replenishment history.
+
+## Repository
+
+- `data/` — source-data instructions and local datasets
+- `docs/` — business context, assumptions, proposed model, data dictionary, metrics, and findings
+- `sql/` — setup, import, profiling, validation, and planned analysis scripts
+- `tests/` — SQL data-quality test work
+- `references/` — SQL patterns
+- `results/` — reserved for reviewed outputs
+
+## Current SQL Progress
+
+Run the populated scripts in order:
+
+1. `sql/01_database_setup.sql` — creates `supply_chain_analytics` and the raw text staging table.
+2. `sql/02_import_dataco.sql` — guarded `psql` `\copy` import from the local source CSV.
+3. `sql/03_data_profiling.sql` — read-only profiling.
+4. `sql/04_data_quality_checks.sql` — read-only consistency and anomaly checks.
+
+Scripts `sql/05` through `sql/12` are currently placeholders, not completed analyses. Findings recorded so far are summarized in [docs/findings_report.md](./docs/findings_report.md).
+
+## Getting Started
+
+Prerequisites: PostgreSQL and the `psql` client. The setup script must be run with a role permitted to create a database if `supply_chain_analytics` does not already exist. From PowerShell at the repository root:
+
+```powershell
+psql -X -W -U postgres -v ON_ERROR_STOP=1 -d postgres -f 'sql\01_database_setup.sql'
+psql -X -W -U postgres -v ON_ERROR_STOP=1 -v replace_staging=on -d supply_chain_analytics -f 'sql\02_import_dataco.sql'
+```
+
+The import script defaults to doing nothing. `-v replace_staging=on` explicitly authorizes replacing the staging table contents; review existing data before using it. The script uses client-side `\copy` and currently names this workspace's local CSV path. If the repository is elsewhere, update only that local path in `sql/02_import_dataco.sql`.
+
+Then connect to `supply_chain_analytics` in a SQL editor and run `sql/03_data_profiling.sql`, followed by `sql/04_data_quality_checks.sql`. These files contain regular SQL queries; setup and import use `psql` commands and are not plain SQL-editor scripts.
+
+See [data/README.md](./data/README.md) for source and data-handling notes.
+
+## Documentation
+
+- [Business context](./docs/business_context.md)
+- [Assumptions and limitations](./docs/assumptions_and_limitations.md)
+- [ER diagram](./docs/er_diagram.md)
+- [Data dictionary](./docs/data_dictionary.md)
+- [Metric definitions](./docs/metric_definitions.md)
+- [Findings report](./docs/findings_report.md)
+
+## Technology
+
 - PostgreSQL
 - SQL
 - Visual Studio Code
 - Git and GitHub
 
-Repository structure
-- data/ — data instructions, local datasets, and permitted samples
-- docs/ — business context, schema, metrics, assumptions, and findings
-- sql/ — database setup, profiling, analysis, and optimization scripts
-- tests/ — SQL-based data-quality checks
-- references/ — reusable SQL patterns and revision notes
-- results/ — validated outputs and selected visualizations
+## Author
 
-Data source
-Dataset: To be finalized after source inspection and licensing review.
-
-Original source and attribution: To be documented.
-
-Any synthetic data added to extend inventory or procurement analysis will be explicitly identified as synthetic.
-
-Getting started
-Setup instructions will be added after the database schema and loading process are finalized.
-
-Key findings
-Findings will be added only after the relevant SQL queries have been executed and validated.
-
-Data quality and limitations
-The project will document table grain, metric definitions, data exclusions, assumptions, and known limitations.
-
-Reproducibility
-SQL scripts will be organized in execution order. Database prerequisites, setup instructions, and data-loading steps will be documented as the project develops.
-
-Author
 Sanskruti Joshi

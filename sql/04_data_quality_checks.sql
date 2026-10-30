@@ -1,6 +1,5 @@
--- Purpose: Test key integrity, logical consistency, chronology,
--- and suspicious numeric values in the raw staging data.
--- All queries are read-only; no source rows are modified.
+-- Purpose: Test key integrity, logical consistency, chronology, and suspicious numeric values in the raw staging data.
+
 -- =========================================================
 
 -- SECTION A: ENTITY IDENTIFIER COMPLETENESS AND UNIQUENESS
@@ -83,6 +82,7 @@ GROUP BY BTRIM("Order Item Id")
 HAVING COUNT(*) > 1
 ORDER BY row_count DESC, order_item_id;
 
+
 -- SECTION B: PRODUCT IDENTIFIER MAPPING AND REFERENCE INTEGRITY
 
 -- Compare the two product ID fields on each order-item row.
@@ -119,6 +119,7 @@ LEFT JOIN products AS p
     ON p.product_id = oi.product_id
 WHERE p.product_id IS NULL
 ORDER BY oi.product_id;
+
 
 -- SECTION C: CUSTOMER AND ORDER-LEVEL CONSISTENCY
 
@@ -166,6 +167,7 @@ HAVING
     OR COUNT(DISTINCT "Order Region") > 1
     OR COUNT(DISTINCT "Order State") > 1
 ORDER BY "Order Id";
+
 
 -- SECTION D: PRODUCT, CATEGORY, AND DEPARTMENT MAPPING
 
@@ -233,10 +235,9 @@ GROUP BY BTRIM("Product Card Id")
 HAVING COUNT(DISTINCT NULLIF(BTRIM("Department Id"), '')) > 1
 ORDER BY product_id;
 
+
 -- SECTION E: DELIVERY STATUS / LATE-DELIVERY FLAG
--- Inspect the cross-tab. Interpret combinations against documented source
--- definitions; do not infer that every risk=1 row must have the same status
--- without confirming the dataset's business definition.
+-- Inspect the cross-tab. Interpret combinations against documented source definitions
 SELECT
     "Delivery Status",
     "Late_delivery_risk",
@@ -245,9 +246,10 @@ FROM staging.dataco_raw
 GROUP BY "Delivery Status", "Late_delivery_risk"
 ORDER BY "Delivery Status", "Late_delivery_risk";
 
+
 -- SECTION F: ORDER CARDINALITY AND ITEM IDENTIFIERS
--- Because this is an order-item table, orders present here necessarily have
--- at least one row. This query measures observed rows/items per represented order.
+-- Because this is an order-item table, orders present here necessarily have at least one row. 
+--This query measures observed rows/items per represented order.
 WITH order_item_counts AS (
     SELECT
         BTRIM("Order Id") AS order_id,
@@ -265,6 +267,7 @@ SELECT
         WHERE item_rows <> distinct_nonblank_item_ids
     ) AS orders_with_missing_or_repeated_item_ids
 FROM order_item_counts;
+
 
 -- SECTION G: NUMERICAL VALIDITY
 -- File 03 checks numeric text syntax. These checks look for suspicious values.
@@ -301,9 +304,9 @@ SELECT
     COUNT(*) FILTER (WHERE profit_ratio IS NULL) AS unparsed_or_missing_profit_ratios
 FROM parsed;
 
+
 -- SECTION H: DATE CHRONOLOGY
--- This checks for shipping timestamps before order timestamps among nonblank
--- values. Run after reviewing the date-format results in file 03.
+-- This checks for shipping timestamps before order timestamps among nonblank values. It does not validate the timestamps themselves, which is done in file 03.
 WITH parsed_dates AS (
     SELECT
         "Order Id" AS order_id,
@@ -330,10 +333,10 @@ WHERE order_datetime IS NOT NULL
 ORDER BY order_datetime
 LIMIT 100;
 
+
 -- SECTION I: PROFIT-RATIO / ORDER-PROFIT SIGN COMPARISON
 -- Order Profit Per Order is an order-level measure repeated on item rows.
--- This comparison is diagnostic, not independent mathematical validation of
--- the item-level profit ratio.
+-- This comparison is diagnostic, not independent mathematical validation of the item-level profit ratio.
 WITH parsed AS (
     SELECT
         CASE

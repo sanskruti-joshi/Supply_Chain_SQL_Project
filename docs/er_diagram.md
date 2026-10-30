@@ -1,20 +1,15 @@
-
 # Entity-Relationship Diagram
 
-## Purpose
+## Purpose and Status
 
-This diagram presents the proposed logical data model for the Supply Chain & Operations Intelligence project.
+This is a proposed logical model for analysis of the DataCo Smart Supply Chain dataset. It is not yet an implemented or fully validated database schema. Entity names are simplified and may differ from the final PostgreSQL names.
 
-The model separates customer, order, order-item, product, category, and department information to support structured SQL analysis, reduce unnecessary duplication, and enable reliable business reporting.
-
-The model is based on the DataCo Smart Supply Chain dataset and is subject to validation against the source data.
-
-## Proposed Logical Model
+## Proposed Model
 
 ```mermaid
 erDiagram
     CUSTOMER ||--o{ CUSTOMER_ORDER : places
-    CUSTOMER_ORDER ||--o{ ORDER_ITEM : contains
+    CUSTOMER_ORDER ||--|{ ORDER_ITEM : contains
     PRODUCT ||--o{ ORDER_ITEM : appears_in
     CATEGORY ||--o{ PRODUCT : classifies
     DEPARTMENT ||--o{ PRODUCT : groups
@@ -64,39 +59,11 @@ erDiagram
     }
 ```
 
-## Validation Status
+## Modeling Notes
 
-The initial staging import completed successfully with 180,519 rows and 53 source columns.
+- The source is denormalized and currently loaded into a text-based staging table; the entities and keys above are proposed.
+- The source contains two product identifiers (`Product Card Id` and `Order Item Cardprod Id`). The checks recorded to date found them aligned, but the final foreign-key source must be chosen explicitly.
+- Order-item facts and order-level attributes must remain at their appropriate grains. In particular, an order-level profit measure must not be summed once per item row.
+- The model and cardinalities remain subject to primary-key, foreign-key, and business-rule validation before implementation.
 
-Initial profiling established the following:
-
-- 65,752 distinct order IDs and 180,519 distinct order-item IDs.
-- No duplicate non-empty order-item IDs were found.
-- No missing values were found in the five key identifier fields checked.
-- `Customer Id` and `Order Customer Id` matched in all rows.
-- No order was found with multiple distinct customer IDs in the order-level consistency check.
-- The checked order-level attributes showed no conflicting values within an order.
-- No conflicting product names or prices were found for a product ID.
-- No conflicting category names or department names were found for their respective IDs.
-- No product was found associated with multiple categories or departments in the completed checks.
-- The delivery-status counts agreed with the corresponding late-delivery-risk counts.
-
-These results support the proposed logical relationships but do not yet establish full referential integrity or validate every business rule.
-
-## Outstanding Validation
-
-Before implementing the final schema, verify:
-
-- That every foreign-key value references an existing parent record.
-- That all candidate primary keys are unique and non-null.
-- That the product identifier used by order items matches the product identifier used in the product entity.
-- That category and department identifiers have no missing or invalid values.
-- That numerical measures and date fields have appropriate data types and valid values.
-- That sales, discounts, and profit are aggregated at the correct level.
-
-## Design Notes
-
-- The staging table preserves the source fields as text for initial inspection.
-- Entity and column names in this diagram are simplified logical names; the final PostgreSQL schema may use different names.
-- PostgreSQL data types and constraints will be finalized after validation.
-- The model is a proposed normalized design, not a representation of the original denormalized CSV structure.
+See [findings_report.md](./findings_report.md) for the current validation evidence and [assumptions_and_limitations.md](./assumptions_and_limitations.md) for outstanding modeling caveats.
