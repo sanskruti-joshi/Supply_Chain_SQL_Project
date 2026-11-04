@@ -52,6 +52,7 @@ See [data/README.md](./data/README.md) for source and data-handling notes.
 - [Assumptions and limitations](./docs/assumptions_and_limitations.md)
 - [ER diagram](./docs/er_diagram.md)
 - [Data dictionary](./docs/data_dictionary.md)
+- [Source-to-entity mapping](./docs/source_to_entity_mapping.md)
 - [Metric definitions](./docs/metric_definitions.md)
 - [Findings report](./docs/findings_report.md)
 

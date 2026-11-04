@@ -1,12 +1,12 @@
--- Purpose: Describe the raw DataCo dataset before validation
--- or transformation. All queries are read-only.
+-- Purpose: Profile the raw DataCo staging dataset before validation or
+-- transformation. All queries are read-only.
 -- =========================================================
 
 -- 1. Overall dataset size.
 SELECT COUNT(*) AS imported_row_count
 FROM staging.dataco_raw;
 
--- 2. Compare the expected source width with the staging table.
+-- 2. Column count check against the known source width.
 SELECT
     53 AS expected_column_count,
     COUNT(*) AS actual_column_count,
@@ -15,8 +15,7 @@ FROM information_schema.columns
 WHERE table_schema = 'staging'
   AND table_name = 'dataco_raw';
 
--- 3. Completeness profile for key identifiers and core dimensions.
--- This is a focused profile, not an all-53-column completeness report.
+-- 3. Focused completeness profile for key identifiers and core source dimensions.
 SELECT
     field_name,
     COUNT(*) FILTER (WHERE field_value IS NULL) AS null_count,
@@ -55,8 +54,7 @@ SELECT
     COUNT(DISTINCT NULLIF(BTRIM("Department Id"), '')) AS distinct_department_ids
 FROM staging.dataco_raw;
 
--- 5. Date-field summary. The expected source shape is M/D/YYYY H:MM.
--- This checks text shape, not full calendar validity.
+-- 5. Date-field summary. The expected source text format is M/D/YYYY H:MM.
 WITH date_fields AS (
     SELECT 'order date (DateOrders)' AS field_name,
            "order date (DateOrders)" AS raw_value
@@ -90,10 +88,10 @@ FROM date_fields
 GROUP BY field_name
 ORDER BY field_name;
 
--- 6. Inspect a small sample of distinct date strings and their frequencies.
+-- 6. Sample of distinct date strings and their frequencies.
 WITH date_fields AS (
     SELECT 'order date (DateOrders)' AS field_name,
-        "order date (DateOrders)" AS raw_value
+           "order date (DateOrders)" AS raw_value
     FROM staging.dataco_raw
     UNION ALL
     SELECT 'shipping date (DateOrders)',
@@ -107,9 +105,7 @@ GROUP BY field_name, raw_value
 ORDER BY field_name, raw_value
 LIMIT 40;
 
--- 7. Check text syntax for fields expected to be numeric.
--- This validates syntax only, not semantic ranges or target-type precision.
--- Postal codes are omitted because they are identifiers and should remain text.
+-- 7. Check syntax for fields expected to be numeric.
 WITH numeric_values AS (
     SELECT field_name, raw_value, value_kind
     FROM staging.dataco_raw AS r
@@ -157,18 +153,13 @@ conversion_checks AS (
 )
 SELECT
     field_name,
-    COUNT(*) FILTER (
-        WHERE conversion_format_ok IS NOT NULL
-    ) AS nonempty_value_count,
-    COUNT(*) FILTER (
-        WHERE conversion_format_ok IS FALSE
-    ) AS invalid_numeric_format_count
+    COUNT(*) FILTER (WHERE conversion_format_ok IS NOT NULL) AS nonempty_value_count,
+    COUNT(*) FILTER (WHERE conversion_format_ok IS FALSE) AS invalid_numeric_format_count
 FROM conversion_checks
 GROUP BY field_name
 ORDER BY field_name;
 
 -- 8. Enumerate observed values and frequencies for key categorical fields.
--- Useful for discovering unexpected labels; consistency rules are in file 04.
 SELECT
     field_name,
     field_value,
@@ -186,25 +177,17 @@ GROUP BY field_name, field_value
 ORDER BY field_name, field_value;
 
 -- 9. Profile the distribution of Order Item Profit Ratio.
--- Negative values are not automatically errors; interpret them using the
--- dataset's business definition before making any cleaning decision.
 SELECT
     MIN("Order Item Profit Ratio"::NUMERIC) AS minimum_profit_ratio,
     MAX("Order Item Profit Ratio"::NUMERIC) AS maximum_profit_ratio,
     AVG("Order Item Profit Ratio"::NUMERIC) AS average_profit_ratio,
-    COUNT(*) FILTER (
-        WHERE "Order Item Profit Ratio"::NUMERIC < 0
-    ) AS negative_ratio_rows,
-    COUNT(*) FILTER (
-        WHERE "Order Item Profit Ratio"::NUMERIC = 0
-    ) AS zero_ratio_rows,
-    COUNT(*) FILTER (
-        WHERE "Order Item Profit Ratio"::NUMERIC > 0
-    ) AS positive_ratio_rows
+    COUNT(*) FILTER (WHERE "Order Item Profit Ratio"::NUMERIC < 0) AS negative_ratio_rows,
+    COUNT(*) FILTER (WHERE "Order Item Profit Ratio"::NUMERIC = 0) AS zero_ratio_rows,
+    COUNT(*) FILTER (WHERE "Order Item Profit Ratio"::NUMERIC > 0) AS positive_ratio_rows
 FROM staging.dataco_raw
 WHERE NULLIF(BTRIM("Order Item Profit Ratio"), '') IS NOT NULL;
 
--- 10. Inspect a sample of records with negative profit ratios.
+-- 10. Sample records with negative profit ratios for interpretation.
 SELECT
     "Order Id",
     "Order Item Id",
