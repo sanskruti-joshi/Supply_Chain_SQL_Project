@@ -10,11 +10,12 @@ changed.
 The staging DDL in `sql/01_database_setup.sql` defines all 53 source columns as
 `TEXT` and preserves their source labels. The local source CSV was checked
 read-only for its header, row count, numeric ranges and scales, date parsing,
-and key/grain consistency. A subsequent read-only investigation of the live
-`supply_chain_analytics.staging.dataco_raw` table confirmed the financial
-measure findings below across 180,519 rows; all inspected numeric fields
-parsed successfully with guarded casts. No customer values are reproduced
-here.
+key/grain consistency, and the two profit source columns discussed below.
+This document also records a prior read-only investigation of the live
+`supply_chain_analytics.staging.dataco_raw` table for financial-measure
+relationships. No query output or database execution log is committed, so
+those reported PostgreSQL results are not independently reproducible from the
+repository alone. No customer values are reproduced here.
 
 Validation labels below distinguish:
 
@@ -30,12 +31,15 @@ Validation labels below distinguish:
 - **Proposed / unresolved** — a modeling decision, not a validated database
   constraint or business definition.
 
-PostgreSQL confirmed that `Order Profit Per Order` and `Benefit per order` are
-identical on every source item row, and both vary within the same 45,902
-multi-item orders. This supersedes any assumption that either is a constant
-order-level measure. The data supports treating them as duplicate source
-fields with observed item-level variation, but their business meaning and
-whether one should be retained as an item measure remain unresolved.
+A read-only audit of the local CSV confirmed that `Order Profit Per Order`
+and `Benefit per order` contain identical text on all 180,519 source rows.
+For each field, values vary within 45,902 orders and are constant within
+19,850 single-item orders. This establishes row-level equality and
+within-order variation in this extract; it rules out treating either field as
+a value that is simply repeated unchanged for every item in every order. It
+does not establish that either field is economically an item-level profit
+measure, an order-level measure, or suitable for summation. Their names are
+not sufficient evidence of business meaning.
 
 ## 2. Source-to-Entity Mapping
 
@@ -49,7 +53,7 @@ column at this stage.
 | `Type` | CUSTOMER_ORDER | `transaction_type` | TEXT | Attribute | Order | Source transaction type; held with order context. | CSV audit: one nonblank value per order in this source; definition still source-glossary based. |
 | `Days for shipping (real)` | CUSTOMER_ORDER | `actual_shipping_days` | INTEGER | Measure | Order | Actual shipping duration; not an item quantity or money value. | CSV audit: integer values 0–6 and stable within each order; meaning/eligible rows still require business validation. |
 | `Days for shipment (scheduled)` | CUSTOMER_ORDER | `scheduled_shipping_days` | INTEGER | Measure | Order | Scheduled duration; keep separate from actual days. | CSV audit: integer values 0–4 and stable within each order; meaning still requires business validation. |
-| `Benefit per order` | UNRESOLVED | — | — | UNRESOLVED | Order item in observed data | Exact duplicate of `Order Profit Per Order` on all 180,519 rows; both vary within the same 45,902 multi-item orders. Do not model both as independent measures. Retaining one as an ORDER_ITEM measure remains a business-definition decision. | PostgreSQL-confirmed: 180,519/180,519 exact row matches; each varies in 45,902 orders and neither varies in 19,850 single-item orders. Business meaning unresolved. |
+| `Benefit per order` | UNRESOLVED | — | — | UNRESOLVED | Source-row value; business grain unresolved | Exact duplicate of `Order Profit Per Order` on all 180,519 rows, but identical row values do not establish that either is an item-level economic measure. Do not model both as independent measures or assign either to an entity until its meaning and grain are resolved. | Local CSV audit: identical source text on 180,519/180,519 rows; each field varies within 45,902 orders and is constant within 19,850 single-item orders. Business meaning and aggregation unresolved. |
 | `Sales per customer` | EXCLUDED | — | — | EXCLUDED | Customer-derived aggregate | A customer aggregate repeated in a transaction-shaped source is not a base customer attribute or order-item fact. No definition, period, or reason to persist the derived aggregate is established. | Source values parse numerically; formula and period are not validated. |
 | `Delivery Status` | CUSTOMER_ORDER | `delivery_status` | TEXT | Attribute | Order | Delivery outcome is stable per order in the inspected source; keep distinct from the binary risk flag. | CSV audit: one nonblank value per order. Findings report status/risk count agreement, not independent correctness of the definition. |
 | `Late_delivery_risk` | CUSTOMER_ORDER | `late_delivery_risk` | `SMALLINT CHECK (late_delivery_risk IN (0, 1))` | Attribute | Order | Binary indicator; do not treat as interchangeable with the text delivery status. | CSV audit: values 0–1 and stable within each order. Findings report aggregate count agreement with status. |
@@ -85,7 +89,7 @@ column at this stage.
 | `Order Item Quantity` | ORDER_ITEM | `quantity` | INTEGER | Measure | Order item | Number of units on an item row. | CSV audit: integer values 1–5; reported findings state inspected quantities were neither zero nor negative. |
 | `Sales` | ORDER_ITEM | `sales_amount` | NUMERIC(18,9) | Measure | Order item | Item-level source measure; distinct from `Order Item Total`. It equals unit price times quantity when rounded to cents in this extract, but this observed relationship alone does not establish a business definition. | PostgreSQL-confirmed: 180,519/180,519 rows match `Order Item Product Price × Order Item Quantity` rounded to cents; exact equality in 126,929 rows. Range 9.989999771–1,999.98999. |
 | `Order Item Total` | ORDER_ITEM | `order_item_total` | NUMERIC(18,9) | Measure | Order item | Keep distinct from `Sales`; do not interpret as an order-header total. Its relationship to Sales less discount is close but has exceptions. | PostgreSQL-confirmed: `Sales − Order Item Discount`, rounded to cents, matches 175,906/180,519 rows (97.4%). The remaining 4,613 rows require investigation. Range 7.489999771–1,939.98999. |
-| `Order Profit Per Order` | UNRESOLVED | — | — | UNRESOLVED | Order item in observed data | Exact duplicate of `Benefit per order` in this extract; both vary within multi-item orders. Do not store both as independent measures or assign either to CUSTOMER_ORDER based on its label. Keep business meaning and any single retained item measure unresolved. | PostgreSQL-confirmed: 180,519/180,519 exact row matches with `Benefit per order`; each varies in the same 45,902 multi-item orders and is constant in 19,850 single-item orders. Candidate equations against item profit ratio do not hold universally. |
+| `Order Profit Per Order` | UNRESOLVED | — | — | UNRESOLVED | Source-row value; business grain unresolved | Exact duplicate of `Benefit per order` in this extract. Its name and observed within-order variation do not establish it as an order or item profit measure. Do not assign it to an entity or retain it as an independent measure without a business definition. | Local CSV audit: identical source text on 180,519/180,519 rows; each field varies within 45,902 orders and is constant within 19,850 single-item orders. Business meaning and aggregation unresolved. |
 | `Order Region` | CUSTOMER_ORDER | `destination_region` | TEXT | Attribute | Order | Order destination region. | CSV audit: one nonblank value per order. |
 | `Order State` | CUSTOMER_ORDER | `destination_state` | TEXT | Attribute | Order | Order destination state; separate from ambiguous `Customer State`. | CSV audit: one nonblank value per order. |
 | `Order Status` | CUSTOMER_ORDER | `order_status` | TEXT | Attribute | Order | Lifecycle/status attribute of the order. | CSV audit: one nonblank value per order; allowed values and transition rules not validated. |
@@ -120,7 +124,7 @@ column at this stage.
 - **Attributes:** `transaction_type`, `order_date`, `order_status`, `market`, destination city/country/region/state/postal code, `shipping_mode`, `delivery_status`, `late_delivery_risk`, `shipping_date`.
 - **Measures:** `actual_shipping_days` and `scheduled_shipping_days`.
 - **Relationships:** One CUSTOMER_ORDER belongs to one CUSTOMER and contains one or more ORDER_ITEM rows; each ORDER_ITEM belongs to one order.
-- **Boundary:** `Order Profit Per Order` and `Benefit per order` are duplicate source fields in this extract, but both vary within multi-item orders. Neither is assigned to CUSTOMER_ORDER; their business meaning and whether to retain one at item grain remain unresolved.
+- **Boundary:** `Order Profit Per Order` and `Benefit per order` are identical source-row values but vary within many orders. Neither is assigned to CUSTOMER_ORDER or ORDER_ITEM; their business meaning and economic grain remain unresolved.
 
 ### ORDER_ITEM
 
@@ -194,9 +198,17 @@ guarantees for other loads.
 | `Days for shipping (real)` | Order | CUSTOMER_ORDER duration measure, separate from scheduled days. |
 | `Days for shipment (scheduled)` | Order | CUSTOMER_ORDER duration measure, separate from actual days. |
 | `Shipping date (DateOrders)` | Order | CUSTOMER_ORDER timestamp. |
-| `Order Profit Per Order` | Order item in observed data; business meaning unresolved | PostgreSQL confirms it varies in all 45,902 multi-item orders and not in 19,850 single-item orders. It is an exact row-by-row duplicate of `Benefit per order`. Do not assign it to CUSTOMER_ORDER based on its name or store it separately from that duplicate. |
-| `Benefit per order` | Order item in observed data; business meaning unresolved | Same observed grain and exact values as `Order Profit Per Order`. Treat the pair as duplicate source fields, not independent measures; determine whether either represents item profit and whether one canonical field should be retained. |
 | `Sales per customer` | Customer-derived aggregate; excluded | Do not store a duplicated aggregate without a defined formula, period, and justified use. It is not interchangeable with sales on an order item. |
+
+### Profit fields with unresolved grain
+
+`Order Profit Per Order` and `Benefit per order` are identical source-row
+values in the inspected CSV. Each varies within 45,902 orders and is constant
+within 19,850 single-item orders. This rules out a simple interpretation as
+an order-level value repeated unchanged on every item row, but does not prove
+that either is an item-level profit amount. Keep both unmapped in the
+normalized schema until their business definitions and valid aggregation
+rules are established; do not sum either by order or item based on its name.
 
 ### Order-item-level measures
 
@@ -225,8 +237,10 @@ PostgreSQL-confirmed source patterns, not validated business formulas.
 `Sales`, `Order Item Total`, and `Order Item Product Price` are not
 interchangeable. `Order Profit Per Order` and `Benefit per order` are exact
 duplicates in this extract, but their names and variation do not establish
-whether either is item profit. Do not persist them as two independent
-measures. `Sales per customer` remains a separate excluded derived aggregate.
+whether either is item profit or order profit. Do not persist them as two
+independent measures or use them in profit metrics until their meaning and
+aggregation are validated. `Sales per customer` remains a separate excluded
+derived aggregate.
 `Order Item Profit Ratio` is a ratio, not a currency measure.
 
 ## 6. PostgreSQL Type Recommendations
@@ -271,13 +285,14 @@ staging. All staging columns are currently `TEXT`.
 
 ## 7. Outstanding Assumptions Before Table Creation
 
-1. Establish the business meaning of the duplicate `Order Profit Per Order`
-   and `Benefit per order` fields. PostgreSQL confirms both are identical on
-   all 180,519 rows, yet vary within the same 45,902 multi-item orders and are
-   constant within 19,850 single-item orders. Decide whether one represents
-   item-level profit, whether either should be retained, and what aggregation
-   is valid. Do not model both independently or assign either to order grain
-   based on its name.
+1. Establish the business meaning and economic grain of the duplicate
+   `Order Profit Per Order` and `Benefit per order` fields. The local CSV
+   audit finds identical text on all 180,519 rows, with within-order
+   variation in 45,902 orders and one value in 19,850 single-item orders.
+   This is inconsistent with a value repeated unchanged across all item rows
+   of each order, but does not prove either field is item-level profit. Decide
+   whether either belongs in the model and define its valid aggregation
+   before modeling or reporting it.
 2. Investigate the 4,613 rows where `Order Item Total` does not equal `Sales −
    Order Item Discount` rounded to cents. No explanation is established.
    Confirm the intended meaning and reporting use of these two separate

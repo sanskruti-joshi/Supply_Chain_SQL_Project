@@ -34,7 +34,6 @@ erDiagram
         int quantity
         numeric sales
         numeric discount
-        numeric profit
         string delivery_status
         int late_delivery_risk
     }
@@ -63,7 +62,8 @@ erDiagram
 
 - The source is denormalized and currently loaded into a text-based staging table; the entities and keys above are proposed.
 - The source contains two product identifiers (`Product Card Id` and `Order Item Cardprod Id`). The checks recorded to date found them aligned, but the final foreign-key source must be chosen explicitly.
-- Order-item facts and order-level attributes must remain at their appropriate grains. In particular, an order-level profit measure must not be summed once per item row.
+- `Order Profit Per Order` and `Benefit per order` are identical in the inspected CSV, but both vary within many orders. Their business meaning and economic grain are unresolved; neither is included in the proposed entities until that is settled.
+- Do not infer a profit aggregation rule from the source column names or their row-level values. Any profit measure and its grain must be validated before it is added to the schema or used in metrics.
 - The model and cardinalities remain subject to primary-key, foreign-key, and business-rule validation before implementation.
 
 See [findings_report.md](./findings_report.md) for the current validation evidence and [assumptions_and_limitations.md](./assumptions_and_limitations.md) for outstanding modeling caveats.
